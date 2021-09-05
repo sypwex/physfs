@@ -101,6 +101,7 @@ pub struct Version {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+#[cfg(not(target_family = "windows"))]
 pub struct Allocator {
     pub Init: Option<unsafe extern "C" fn() -> i32>,
     pub Deinit: Option<unsafe extern "C" fn()>,
@@ -109,6 +110,22 @@ pub struct Allocator {
         unsafe extern "C" fn(
             arg1: *mut raw::c_void,
             arg2: uint64,
+        ) -> *mut raw::c_void,
+    >,
+    pub Free: Option<unsafe extern "C" fn(arg1: *mut raw::c_void)>,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+#[cfg(target_family = "windows")]
+pub struct Allocator {
+    pub Init: Option<unsafe extern "C" fn() -> i32>,
+    pub Deinit: Option<unsafe extern "C" fn()>,
+    pub Malloc: Option<unsafe extern "C" fn(arg1: uint32) -> *mut raw::c_void>,
+    pub Realloc: Option<
+        unsafe extern "C" fn(
+            arg1: *mut raw::c_void,
+            arg2: uint32,
         ) -> *mut raw::c_void,
     >,
     pub Free: Option<unsafe extern "C" fn(arg1: *mut raw::c_void)>,
