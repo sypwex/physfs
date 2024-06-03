@@ -9,12 +9,16 @@ edition = "2018"
 # name = "physfs_sys"
 # path = "src/sys.rs"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [profile.release]
 debug = true
 
 [dependencies]
 log = "0.4.14"
-env_logger = "0.9.0"
+env_logger = "0.11.3"
+wasm-bindgen = "0.2.92"
 
 [build-dependencies]
-bindgen = "0.58.1"
+bindgen = "0.69.4"
