@@ -76,9 +76,90 @@ pub type FileType = PHYSFS_FileType;
 pub type ErrorCode = PHYSFS_ErrorCode;
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct File {
     pub opaque: *mut raw::c_void,
+}
+
+impl File {
+    pub fn new(opaque: *mut raw::c_void) -> Self {
+        File {
+            opaque,
+        }
+    }
+
+    pub fn fileLength(&self) -> Option<usize> {
+        trace!("physfs/fileLength({:?}): entering", self);
+
+        unsafe {
+            let size = PHYSFS_fileLength(self.opaque as *mut PHYSFS_File);
+
+            if size == -1 {
+                error!("physfs/fileLength({:?}): unable to get file length", self.opaque);
+                None
+            } else {
+                trace!("physfs/fileLength({:?}): file length is {}", self, size);
+                Some(size as usize)
+            }
+        }
+    }
+
+    pub fn seek(&self, pos: usize) -> Result<i32, String> {
+        trace!("physfs/seek({:?},{}): entering", self, pos);
+
+        unsafe {
+            let r = PHYSFS_seek(self.opaque as *mut PHYSFS_File, pos as u64);
+
+            if r == 0 {
+                return Err(getLastErrorMessage())
+            }
+
+            trace!("physfs/seek({:?},{}) -> {}", self.opaque, pos, r);
+            Ok(r)
+        }
+    }
+
+    pub fn readBytes(&self, buffer: *mut raw::c_void, len: usize,
+    ) -> PHYSFS_sint64 {
+        trace!("physfs/readBytes({:?},{:?},{}): entering", self, buffer, len);
+
+        unsafe {
+            PHYSFS_readBytes(
+                self.opaque as *mut PHYSFS_File,
+                buffer,
+                len as u64
+            )
+        }
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        trace!("physfs/close({:?}): entering", self);
+
+        unsafe {
+            let r = PHYSFS_close(self.opaque as *mut PHYSFS_File);
+
+            if r == 0 {
+                getLastErrorMessage();
+
+                error!("physfs/drop({:?}): unable to close file", self);
+            }
+        }
+    }
+}
+
+// implement the trait `std::io::Read` for `*mut physfs::File
+impl std::io::Read for File {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let len = buf.len();
+        let r = self.readBytes(buf.as_mut_ptr() as *mut raw::c_void, len);
+        if r < 0 {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, getLastErrorMessage()))
+        } else {
+            Ok(r as usize)
+        }
+    }
 }
 
 #[repr(C)]
@@ -386,33 +467,21 @@ pub fn openAppend(filename: &str) -> *mut File {
     }
 }
 
-pub fn openRead(filename: &str) -> Result<*mut File, String> {
+pub fn openRead(filename: &str) -> Result<File, String> {
     trace!("physfs/openRead({}): entering", filename);
 
     unsafe {
         let filenamec = CString::new(filename).unwrap();
-        let handle = PHYSFS_openRead(filenamec.as_ptr()) as *mut File;
+        let handle = PHYSFS_openRead(filenamec.as_ptr());
 
         if handle.is_null() {
             return Err(getLastErrorMessage())
         }
 
+        let handle = File::new(handle as *mut raw::c_void);
+
         trace!("physfs/openRead({}): -> {:?}", filename, handle);
         Ok(handle)
-    }
-}
-
-pub fn close(handle: *mut File) -> Result<(), String> {
-    trace!("physfs/close({:?}): entering", handle);
-
-    unsafe {
-        let r = PHYSFS_close(handle as *mut PHYSFS_File);
-
-        if r == 0 {
-            return Err(getLastErrorMessage())
-        }
-
-        Ok(())
     }
 }
 
@@ -449,37 +518,6 @@ pub fn eof(handle: *mut File) -> i32 {
 pub fn tell(handle: *mut File) -> PHYSFS_sint64 {
     unsafe {
         PHYSFS_tell(handle as *mut PHYSFS_File)
-    }
-}
-
-pub fn seek(handle: *mut File, pos: usize) -> Result<i32, String> {
-    trace!("physfs/seek({:?},{}): entering", handle, pos);
-
-    unsafe {
-        let r = PHYSFS_seek(handle as *mut PHYSFS_File, pos as u64);
-
-        if r == 0 {
-            return Err(getLastErrorMessage())
-        }
-
-        trace!("physfs/seek({:?},{}) -> {}", handle, pos, r);
-        Ok(r)
-    }
-}
-
-pub fn fileLength(handle: *mut File) -> Option<usize> {
-    trace!("physfs/fileLength({:?}): entering", handle);
-
-    unsafe {
-        let size = PHYSFS_fileLength(handle as *mut PHYSFS_File);
-
-        if size == -1 {
-            error!("physfs/fileLength({:?}): unable to get file length", handle);
-            None
-        } else {
-            trace!("physfs/fileLength({:?}): file length is {}", handle, size);
-            Some(size as usize)
-        }
     }
 }
 
@@ -961,18 +999,6 @@ pub fn utf8ToUtf16(
 ) {
     unsafe {
         PHYSFS_utf8ToUtf16(src, dst, len)
-    }
-}
-
-pub fn readBytes(
-    handle: *mut File,
-    buffer: *mut raw::c_void,
-    len: usize,
-) -> PHYSFS_sint64 {
-    trace!("physfs/readBytes({:?},{:?},{}): entering", handle, buffer, len);
-
-    unsafe {
-        PHYSFS_readBytes(handle as *mut PHYSFS_File, buffer, len as u64)
     }
 }
 
